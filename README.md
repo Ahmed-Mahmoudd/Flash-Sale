@@ -1,59 +1,390 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# 🚀 Flash Sale Backend API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A production-style Flash Sale backend built with **Laravel 12**, demonstrating inventory reservation, order creation, payment webhook processing, concurrency handling, and automatic stock release.
 
-## About Laravel
+This project follows a clean architecture using the **Repository Pattern** and **Service Layer**, with a focus on preventing overselling during high traffic scenarios.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+# ✨ Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- Reserve stock using temporary Holds
+- Prevent overselling with `lockForUpdate()`
+- Database Transactions
+- Order creation from valid Holds
+- Payment Webhook handling
+- Idempotency support for Webhooks
+- Automatic release of expired Holds
+- Scheduler Job
+- Repository Pattern
+- Service Layer Architecture
+- Request Validation
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+# 🏗️ Project Architecture
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```
+Client
+   │
+   ▼
+Controller
+   │
+   ▼
+Request Validation
+   │
+   ▼
+Service Layer
+   │
+   ▼
+Repository Layer
+   │
+   ▼
+MySQL Database
+```
 
-## Laravel Sponsors
+The business logic is isolated inside Services while database access is handled through Repositories.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+---
 
-### Premium Partners
+# 🗄️ Database Design
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+## Products
 
-## Contributing
+Stores product inventory.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+| Column | Description |
+|---------|-------------|
+| id | Product ID |
+| name | Product Name |
+| price | Product Price |
+| total_stock | Actual Stock |
+| reserved_stock | Reserved Quantity |
 
-## Code of Conduct
+---
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Holds
 
-## Security Vulnerabilities
+Represents temporary reservations.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+| Column | Description |
+|---------|-------------|
+| product_id | Reserved Product |
+| qty | Reserved Quantity |
+| status | active / consumed / expired / released |
+| expires_at | Hold expiration time |
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Orders
+
+Created only from valid Holds.
+
+| Column | Description |
+|---------|-------------|
+| hold_id | Source Hold |
+| product_id | Purchased Product |
+| qty | Purchased Quantity |
+| status | pending_payment / paid / failed |
+
+---
+
+## Webhook Events
+
+Stores processed payment events.
+
+| Column | Description |
+|---------|-------------|
+| idempotency_key | Unique Event ID |
+| order_id | Related Order |
+| status | processed |
+
+---
+
+# 🔄 Business Flow
+
+```
+Customer
+     │
+     ▼
+Create Hold
+     │
+     ▼
+Stock Reserved
+     │
+     ▼
+Create Order
+     │
+     ▼
+Pending Payment
+     │
+     ▼
+Payment Webhook
+```
+
+### Payment Success
+
+```
+Webhook (paid)
+
+↓
+
+Order → Paid
+
+↓
+
+Hold → Consumed
+
+↓
+
+reserved_stock --
+
+↓
+
+total_stock --
+```
+
+---
+
+### Payment Failed
+
+```
+Webhook (failed)
+
+↓
+
+Order → Failed
+
+↓
+
+Hold → Released
+
+↓
+
+reserved_stock --
+```
+
+---
+
+### Hold Expiration
+
+```
+Hold expires
+
+↓
+
+Scheduler
+
+↓
+
+ReleaseExpiredHoldsJob
+
+↓
+
+Hold → Expired
+
+↓
+
+reserved_stock --
+```
+
+---
+
+# 🔐 Concurrency Handling
+
+To prevent overselling during flash sales:
+
+- Database Transactions
+- Row-level locking using `lockForUpdate()`
+- Atomic stock updates
+
+This guarantees that multiple users cannot reserve the same stock simultaneously.
+
+---
+
+# 🔁 Idempotency
+
+Payment gateways may send the same webhook multiple times.
+
+Each webhook contains an **idempotency_key**.
+
+If the key already exists:
+
+- The webhook is ignored.
+- No duplicate updates occur.
+
+---
+
+# 📡 API Endpoints
+
+## Create Hold
+
+```
+POST /api/holds
+```
+
+Request
+
+```json
+{
+    "product_id": 1,
+    "qty": 2
+}
+```
+
+---
+
+## Create Order
+
+```
+POST /api/orders
+```
+
+Request
+
+```json
+{
+    "hold_id": 1
+}
+```
+
+---
+
+## Payment Webhook
+
+```
+POST /api/webhook
+```
+
+Request
+
+```json
+{
+    "idempotency_key": "evt_001",
+    "order_id": 1,
+    "payment_status": "paid"
+}
+```
+
+---
+
+# ⚙️ Technologies
+
+- Laravel 12
+- PHP 8.2
+- MySQL
+- Eloquent ORM
+- Scheduler
+- Queue Jobs
+- Repository Pattern
+- Service Layer
+
+---
+
+# 📁 Folder Structure
+
+```
+app
+├── Http
+│   ├── Controllers
+│   └── Requests
+│
+├── Jobs
+│
+├── Models
+│
+├── Repositories
+│
+└── Services
+```
+
+---
+
+# 🚀 Installation
+
+Clone the repository
+
+```bash
+git clone https://github.com/Ahmed-Mahmoudd/Flash-Sale.git
+```
+
+Enter the project
+
+```bash
+cd Flash-Sale
+```
+
+Install dependencies
+
+```bash
+composer install
+```
+
+Copy environment file
+
+```bash
+cp .env.example .env
+```
+
+Generate application key
+
+```bash
+php artisan key:generate
+```
+
+Configure your MySQL database inside `.env`
+
+Run migrations and seeders
+
+```bash
+php artisan migrate:fresh --seed
+```
+
+Start the server
+
+```bash
+php artisan serve
+```
+
+Run the scheduler
+
+```bash
+php artisan schedule:work
+```
+
+---
+
+# 🧪 Tested Scenarios
+
+- Create Hold
+- Insufficient Stock
+- Create Order
+- Duplicate Order Prevention
+- Expired Hold
+- Payment Success
+- Payment Failure
+- Duplicate Webhook
+- Automatic Hold Expiration
+- Automatic Stock Release
+
+---
+
+# 💡 Concepts Demonstrated
+
+- Clean Architecture
+- Repository Pattern
+- Service Layer
+- Dependency Injection
+- Database Transactions
+- Row Locking (`lockForUpdate()`)
+- Race Condition Prevention
+- Idempotency
+- Scheduled Jobs
+- RESTful APIs
+- Request Validation
+
+---
+
+# 📜 License
+
+This project was built for learning purposes to demonstrate backend architecture and concurrency handling using Laravel.
