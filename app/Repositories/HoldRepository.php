@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\Hold;
+use Carbon\Carbon;
 
 class HoldRepository
 {
@@ -19,5 +20,17 @@ class HoldRepository
     public function findById(int $id): ?Hold
     {
         return Hold::find($id);
+    }
+
+    public function findByIdForUpdate(int $id)
+    {
+        return Hold::lockForUpdate()->find($id);
+    }
+
+    public function getExpiredActiveHolds()
+    {
+        return Hold::where('status', 'active')
+            ->where('expires_at', '<=', Carbon::now())
+            ->get();
     }
 }

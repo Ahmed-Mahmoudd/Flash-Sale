@@ -10,9 +10,16 @@ class ProductSeeder extends Seeder
     public function run(): void
     {
         Product::create([
-            'name' => 'Flash Sale Product',
-            'price' => 100,
+            'name' => 'PlayStation 5',
+            'price' => 25000,
             'total_stock' => 10,
+            'reserved_stock' => 0,
+        ]);
+
+        Product::create([
+            'name' => 'iPhone 16',
+            'price' => 65000,
+            'total_stock' => 5,
             'reserved_stock' => 0,
         ]);
     }
